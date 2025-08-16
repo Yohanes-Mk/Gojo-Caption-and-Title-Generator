@@ -13,15 +13,32 @@ interface GenerateBody {
   referenceContent?: string;
 }
 
-const promptTemplates: Record<string, (body: GenerateBody) => string> = {
-  youtube: ({ description, referenceContent }) =>
-    `Create a JSON object with a YouTube video title and two caption variants.\nDescription: ${description}\nReference: ${referenceContent || 'none'}\nRespond using JSON matching this schema: {"title":"string","captions":[{"style":"string","text":"string","hashtags":"string"}]}.`,
-  tiktok: ({ description, referenceContent }) =>
-    `Generate a catchy TikTok title and three short captions as JSON.\nDescription: ${description}\nReference: ${referenceContent || 'none'}\nReturn JSON: {"title":"string","captions":[{"style":"string","text":"string","hashtags":"string"}]}.`,
-  instagram: ({ description, referenceContent }) =>
-    `You are an Instagram influencer assistant. Create a post title and three caption options in JSON.\nDescription: ${description}\nReference: ${referenceContent || 'none'}\nFormat as {"title":"string","captions":[{"style":"string","text":"string","hashtags":"string"}]}.`,
-  linkedin: ({ description, referenceContent }) =>
-    `Produce a professional LinkedIn post title and two caption styles as JSON.\nDescription: ${description}\nReference: ${referenceContent || 'none'}\nJSON format: {"title":"string","captions":[{"style":"string","text":"string","hashtags":"string"}]}.`
+interface PlatformConfig {
+  prompt: (body: GenerateBody) => string;
+  captionCount: number;
+}
+
+const platforms: Record<string, PlatformConfig> = {
+  youtube: {
+    captionCount: 2,
+    prompt: ({ description, referenceContent }) =>
+      `Create a YouTube video title and two engaging caption options with hashtags.\nDescription: ${description}\nReference: ${referenceContent || 'none'}`
+  },
+  tiktok: {
+    captionCount: 3,
+    prompt: ({ description, referenceContent }) =>
+      `Generate a catchy TikTok title and three short caption options with hashtags.\nDescription: ${description}\nReference: ${referenceContent || 'none'}`
+  },
+  instagram: {
+    captionCount: 3,
+    prompt: ({ description, referenceContent }) =>
+      `You are an Instagram influencer assistant. Craft a post title and three caption styles with hashtags.\nDescription: ${description}\nReference: ${referenceContent || 'none'}`
+  },
+  linkedin: {
+    captionCount: 2,
+    prompt: ({ description, referenceContent }) =>
+      `Produce a professional LinkedIn post title and two caption variants with hashtags.\nDescription: ${description}\nReference: ${referenceContent || 'none'}`
+  }
 };
 
 app.post('/generate', async (req, res) => {
@@ -31,8 +48,8 @@ app.post('/generate', async (req, res) => {
     return res.status(400).json({ error: 'platform and description are required' });
   }
 
-  const template = promptTemplates[platform];
-  if (!template) {
+  const config = platforms[platform];
+  if (!config) {
     return res.status(400).json({ error: 'Unsupported platform' });
   }
 
@@ -41,21 +58,26 @@ app.post('/generate', async (req, res) => {
     return res.status(500).json({ error: 'OPENAI_API_KEY not set' });
   }
 
-  const prompt = template({ platform, description, referenceContent });
+  const prompt = config.prompt({ platform, description, referenceContent });
 
   try {
     const OpenAI = (await import('openai')).default;
     const client = new OpenAI({ apiKey });
-    const completion = await client.chat.completions.create({
+    const response = await client.responses.create({
       model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: 'You generate engaging social media titles and captions.' },
-        { role: 'user', content: prompt }
-      ],
-      response_format: { type: 'json_object' }
+      instructions: 'You generate engaging social media titles and captions.',
+      input: prompt,
+      text: {
+        format: {
+          type: 'json_schema',
+          name: 'generated_content',
+          schema: buildSchema(config.captionCount),
+          strict: true
+        }
+      }
     });
 
-    const content = completion.choices[0]?.message?.content;
+    const content = response.output_text;
     if (!content) {
       return res.status(500).json({ error: 'No content returned from AI' });
     }
@@ -74,6 +96,32 @@ app.post('/generate', async (req, res) => {
     return res.status(500).json({ error: 'Server error' });
   }
 });
+
+function buildSchema(count: number) {
+  return {
+    type: 'object',
+    properties: {
+      title: { type: 'string' },
+      captions: {
+        type: 'array',
+        minItems: count,
+        maxItems: count,
+        items: {
+          type: 'object',
+          properties: {
+            style: { type: 'string' },
+            text: { type: 'string' },
+            hashtags: { type: 'string' }
+          },
+          required: ['style', 'text', 'hashtags'],
+          additionalProperties: false
+        }
+      }
+    },
+    required: ['title', 'captions'],
+    additionalProperties: false
+  };
+}
 
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
