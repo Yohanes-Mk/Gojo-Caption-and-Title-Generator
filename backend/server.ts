@@ -44,29 +44,18 @@ app.post('/generate', async (req, res) => {
   const prompt = template({ platform, description, referenceContent });
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          { role: 'system', content: 'You generate engaging social media titles and captions.' },
-          { role: 'user', content: prompt }
-        ]
-      })
+    const OpenAI = (await import('openai')).default;
+    const client = new OpenAI({ apiKey });
+    const completion = await client.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: 'You generate engaging social media titles and captions.' },
+        { role: 'user', content: prompt }
+      ],
+      response_format: { type: 'json_object' }
     });
 
-    if (!response.ok) {
-      const err = await response.text();
-      console.error('OpenAI error:', err);
-      return res.status(500).json({ error: 'AI generation failed' });
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const content = completion.choices[0]?.message?.content;
     if (!content) {
       return res.status(500).json({ error: 'No content returned from AI' });
     }

@@ -2,7 +2,7 @@
 
 ## Backend Server
 
-An Express server powers the `/generate` endpoint used to create platform specific titles and captions.
+An Express server powers the `/generate` endpoint and uses OpenAI's ChatGPT API to craft platform specific titles and captions.
 
 ### Running the server
 
