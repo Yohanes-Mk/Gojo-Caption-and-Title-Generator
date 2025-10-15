@@ -18,7 +18,12 @@ const buildErrorMessage = async (response: Response) => {
   try {
     const data = await response.json();
     if (data?.error) {
-      return typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
+      const errorMessage = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
+      if (data?.details) {
+        const details = typeof data.details === 'string' ? data.details : JSON.stringify(data.details);
+        return `${errorMessage}: ${details}`;
+      }
+      return errorMessage;
     }
   } catch (error) {
     // ignore JSON parse error and fall back to status text

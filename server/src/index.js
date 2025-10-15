@@ -63,6 +63,8 @@ app.post('/api/generate', async (req, res) => {
   try {
     const response = await openaiClient.responses.create({
       model,
+      temperature: 0.6,
+      max_output_tokens: 600,
       input: [
         {
           role: 'system',
@@ -81,7 +83,12 @@ app.post('/api/generate', async (req, res) => {
               type: 'text',
               text: `Platform: ${platform}\n` +
                 `Content description: ${description}\n` +
-                `Reference material: ${referenceContent ?? 'None provided'}`
+                `Reference material: ${referenceContent ?? 'None provided'}\n` +
+                'Instructions:\n' +
+                '- Tailor tone, structure, and hashtags to the named platform.\n' +
+                '- Provide concise copy with a clear hook up front.\n' +
+                '- Avoid making up facts that contradict the description or references.\n' +
+                '- Do not mention that you used AI or reference these instructions.'
             }
           ]
         }
@@ -128,10 +135,54 @@ app.post('/api/generate', async (req, res) => {
       }
     });
 
-    const outputText = response.output_text;
-    const payload = JSON.parse(outputText);
+    const extractJsonText = () => {
+      if (typeof response.output_text === 'string' && response.output_text.trim()) {
+        return response.output_text;
+      }
 
-    return res.json(payload);
+      const firstItem = response.output?.[0]?.content?.find?.(item => item.type === 'output_text');
+      if (firstItem?.text?.trim()) {
+        return firstItem.text;
+      }
+
+      const firstText = response.output?.[0]?.content?.find?.(item => item.type === 'text');
+      if (firstText?.text?.trim()) {
+        return firstText.text;
+      }
+
+      return '';
+    };
+
+    const outputText = extractJsonText();
+
+    if (!outputText) {
+      throw new Error('The model returned an empty response.');
+    }
+
+    let payload;
+
+    try {
+      payload = JSON.parse(outputText);
+    } catch (parseError) {
+      console.error('Failed to parse JSON response from OpenAI', { outputText });
+      throw new Error('Received an invalid response from OpenAI. Please try again.');
+    }
+
+    const payloadValidation = z.object({
+      title: z.string().min(1),
+      captions: z.array(z.object({
+        style: z.string().min(1),
+        text: z.string().min(1),
+        hashtags: z.string().optional(),
+      })).min(2)
+    }).safeParse(payload);
+
+    if (!payloadValidation.success) {
+      console.error('OpenAI response failed validation', payloadValidation.error.format());
+      throw new Error('The generated content was incomplete. Please try again.');
+    }
+
+    return res.json(payloadValidation.data);
   } catch (error) {
     console.error('Failed to generate content with OpenAI', error);
 
