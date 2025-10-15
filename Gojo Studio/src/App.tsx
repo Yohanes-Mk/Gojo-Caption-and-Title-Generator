@@ -13,12 +13,14 @@ function App() {
   const [referenceContent, setReferenceContent] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedContent, setGeneratedContent] = useState<GeneratedContent | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleGenerate = async () => {
     if (!description.trim()) return;
 
     setIsGenerating(true);
     setGeneratedContent(null);
+    setErrorMessage(null);
 
     try {
       const content = await generateContent({
@@ -29,6 +31,8 @@ function App() {
       setGeneratedContent(content);
     } catch (error) {
       console.error('Error generating content:', error);
+      const message = error instanceof Error ? error.message : 'Failed to generate content. Please try again.';
+      setErrorMessage(message);
     } finally {
       setIsGenerating(false);
     }
@@ -104,6 +108,13 @@ function App() {
 
           {/* Results */}
           {isGenerating && <LoadingState />}
+
+          {errorMessage && !isGenerating && (
+            <div className="elegant-card rounded-2xl p-8 border border-red-500/40 bg-red-500/10">
+              <h3 className="text-xl font-semibold text-red-200 mb-2">We couldn't generate content</h3>
+              <p className="text-red-200/80">{errorMessage}</p>
+            </div>
+          )}
 
           {generatedContent && !isGenerating && (
             <ResultsSection
